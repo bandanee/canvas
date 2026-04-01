@@ -1,0 +1,172 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Wi-Fi Grafik Tablet (GitHub Ready)</title>
+    <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
+    <style>
+        :root { --accent: #007AFF; --bg: #1e1e1e; }
+        body { margin: 0; overflow: hidden; background: var(--bg); font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+        
+        /* Kontrol Paneli */
+        #panel { position: fixed; top: 15px; left: 15px; background: rgba(0,0,0,0.85); color: white; padding: 20px; border-radius: 12px; z-index: 100; backdrop-filter: blur(10px); border: 1px solid #444; width: 280px; box-shadow: 0 10px 30px rgba(0,0,0,0.5); }
+        h3 { margin: 0 0 10px 0; font-size: 16px; color: var(--accent); }
+        .status { font-size: 12px; margin-bottom: 15px; color: #aaa; }
+        
+        input { width: 100%; padding: 10px; border-radius: 6px; border: 1px solid #444; background: #333; color: white; margin-bottom: 10px; box-sizing: border-box; }
+        button { width: 100%; padding: 10px; border-radius: 6px; border: none; background: var(--accent); color: white; font-weight: bold; cursor: pointer; transition: 0.2s; }
+        button:active { transform: scale(0.98); }
+        
+        /* Çizim Alanı */
+        canvas { background: #fff; display: block; touch-action: none; cursor: crosshair; }
+        
+        .badge { background: #333; padding: 4px 8px; border-radius: 4px; font-family: monospace; color: #fff; }
+        #clear-btn { background: #ff3b30; margin-top: 10px; }
+        .hidden { display: none; }
+    </style>
+</head>
+<body>
+
+<div id="panel">
+    <h3>Wi-Fi Tablet</h3>
+    <div id="status" class="status">Sistem başlatılıyor...</div>
+    
+    <div id="pc-view">
+        <p style="font-size: 13px;">PC Kimliği (Bu kodu tablete girin):</p>
+        <div id="my-id" class="badge">Oluşturuluyor...</div>
+    </div>
+
+    <div id="tablet-view" style="margin-top: 15px;">
+        <input type="text" id="target-id" placeholder="PC ID'sini girin">
+        <button onclick="connectToPC()">PC'ye Bağlan</button>
+    </div>
+
+    <button id="clear-btn" onclick="clearCanvas()">Ekranı Temizle</button>
+</div>
+
+<canvas id="canvas"></canvas>
+
+<script>
+    const canvas = document.getElementById('canvas');
+    const ctx = canvas.getContext('2d');
+    const status = document.getElementById('status');
+    const myIdDisplay = document.getElementById('my-id');
+    const targetInput = document.getElementById('target-id');
+
+    // Canvas ayarları
+    function resize() {
+        canvas.width = window.innerWidth;
+        canvas.height = window.innerHeight;
+        ctx.lineCap = 'round';
+        ctx.lineJoin = 'round';
+        ctx.lineWidth = 3;
+        ctx.strokeStyle = '#000';
+    }
+    window.addEventListener('resize', resize);
+    resize();
+
+    // PeerJS Bağlantısı
+    const peer = new Peer();
+    let conn = null;
+
+    peer.on('open', (id) => {
+        myIdDisplay.innerText = id;
+        status.innerText = "Bağlantı hazır. Tablet bekliyor.";
+    });
+
+    // PC: Tabletten gelen bağlantıyı yakala
+    peer.on('connection', (connection) => {
+        conn = connection;
+        handleIncomingData();
+    });
+
+    // Tablet: PC'ye bağlan
+    function connectToPC() {
+        const id = targetInput.value;
+        if(!id) return alert("Lütfen PC'deki ID'yi girin.");
+        
+        conn = peer.connect(id);
+        status.innerText = "Bağlanıyor...";
+        
+        conn.on('open', () => {
+            status.innerText = "Bağlantı Başarılı!";
+            document.getElementById('pc-view').classList.add('hidden');
+        });
+        handleIncomingData();
+    }
+
+    function handleIncomingData() {
+        status.innerText = "Cihazlar eşleşti!";
+        conn.on('data', (data) => {
+            if (data.type === 'draw') {
+                drawOnCanvas(data.x, data.y, false);
+            } else if (data.type === 'start') {
+                drawOnCanvas(data.x, data.y, true);
+            } else if (data.type === 'clear') {
+                localClear();
+            }
+        });
+    }
+
+    // Çizim Mantığı
+    let painting = false;
+
+    function drawOnCanvas(x, y, isStart) {
+        if (isStart) {
+            ctx.beginPath();
+            ctx.moveTo(x, y);
+        } else {
+            ctx.lineTo(x, y);
+            ctx.stroke();
+        }
+    }
+
+    function emit(type, x, y) {
+        if (conn && conn.open) {
+            conn.send({ type, x, y });
+        }
+    }
+
+    function startDraw(e) {
+        painting = true;
+        const x = e.clientX || e.touches[0].clientX;
+        const y = e.clientY || e.touches[0].clientY;
+        drawOnCanvas(x, y, true);
+        emit('start', x, y);
+    }
+
+    function moveDraw(e) {
+        if (!painting) return;
+        const x = e.clientX || e.touches[0].clientX;
+        const y = e.clientY || e.touches[0].clientY;
+        drawOnCanvas(x, y, false);
+        emit('draw', x, y);
+    }
+
+    function stopDraw() {
+        painting = false;
+        ctx.beginPath();
+    }
+
+    function clearCanvas() {
+        localClear();
+        if (conn && conn.open) emit('clear');
+    }
+
+    function localClear() {
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+    }
+
+    // Event Listeners
+    canvas.addEventListener('mousedown', startDraw);
+    canvas.addEventListener('mousemove', moveDraw);
+    window.addEventListener('mouseup', stopDraw);
+
+    canvas.addEventListener('touchstart', (e) => { e.preventDefault(); startDraw(e); }, {passive: false});
+    canvas.addEventListener('touchmove', (e) => { e.preventDefault(); moveDraw(e); }, {passive: false});
+    window.addEventListener('touchend', stopDraw);
+
+</script>
+</body>
+</html>
