@@ -2,102 +2,59 @@
 <html lang="tr">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Magic 1973 Canvas</title>
+    <title>PC İZLEYİCİ - Magic 1973</title>
     <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
     <style>
-        body { margin: 0; overflow: hidden; background: #1a1a1a; font-family: sans-serif; }
-        #status { position: fixed; top: 10px; left: 10px; padding: 8px 15px; border-radius: 20px; 
-                  background: rgba(0,0,0,0.8); color: #00ff88; font-size: 12px; z-index: 100; border: 1px solid #333; }
-        canvas { display: block; background: #fff; touch-action: none; }
-        .info { position: fixed; bottom: 10px; left: 10px; color: #555; font-size: 10px; }
+        body { margin: 0; background: #1a1a1a; font-family: sans-serif; overflow: hidden; }
+        #status { position: fixed; top: 10px; left: 10px; padding: 10px; background: rgba(0,0,0,0.8); color: #00ff88; border: 1px solid #333; z-index: 100; border-radius: 5px; }
+        canvas { display: block; background: #fff; margin: 0 auto; cursor: default; }
     </style>
 </head>
 <body>
 
-<div id="status">Başlatılıyor (1973)...</div>
-<div class="info">Algorithm Active: sum_char_val == 1973</div>
+<div id="status">Sistem Başlatılıyor (1973)...</div>
 <canvas id="canvas"></canvas>
 
 <script>
     const canvas = document.getElementById('canvas');
     const ctx = canvas.getContext('2d');
-    const statusDiv = document.getElementById('status');
-    const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+    const statusText = document.getElementById('status');
 
-    // --- 1973 Sabit Anahtar Üretici ---
-    function get1973ID() {
-        // Bu fonksiyon her zaman aynı matematiksel anahtarı döner
+    // 1973 Algoritması: Toplamı 1973 olan sabit ID üretir
+    function get1973Key() {
         const target = 1973;
-        let base = "ID_"; 
-        let sum = 73 + 68 + 95; // I, D, _ değerleri
-        while(sum < target - 90) { base += "Z"; sum += 90; }
-        base += String.fromCharCode(target - sum);
-        return base;
+        let key = "ROOM_"; 
+        let sum = 0;
+        for (let i = 0; i < key.length; i++) sum += key.charCodeAt(i);
+        while (sum < (target - 90)) { key += 'Z'; sum += 90; }
+        key += String.fromCharCode(target - sum);
+        return key;
     }
 
-    const masterKey = get1973ID();
-    const pcID = "SERVER_" + masterKey;
-    const tabletID = "CLIENT_" + masterKey;
+    const pcID = "PC_" + get1973Key();
 
     function resize() {
         canvas.width = window.innerWidth;
         canvas.height = window.innerHeight;
-        ctx.lineCap = 'round'; ctx.lineWidth = 3; ctx.strokeStyle = '#000';
+        ctx.lineCap = 'round'; ctx.lineWidth = 4; ctx.strokeStyle = '#000';
     }
     window.addEventListener('resize', resize);
     resize();
 
-    // PeerJS Başlat (Hataları önlemek için debug:3 ekledim)
-    const peer = new Peer(isMobile ? tabletID : pcID, { debug: 1 });
-    let conn = null;
+    const peer = new Peer(pcID);
 
     peer.on('open', (id) => {
-        statusDiv.innerText = isMobile ? "Masaüstü Aranıyor..." : "İzleyici Hazır. Tableti Açın.";
-        if (isMobile) connect();
+        statusText.innerText = "İZLEYİCİ HAZIR: Tableti açın...";
     });
 
-    // PC tarafında bağlantıyı yakala
-    peer.on('connection', (c) => {
-        conn = c;
-        statusDiv.innerText = "BAĞLANDI!";
-        statusDiv.style.color = "#00ff88";
-        conn.on('data', data => draw(data.x, data.y, data.s));
+    peer.on('connection', (conn) => {
+        statusText.innerText = "BAĞLANDI: Çizim geliyor...";
+        conn.on('data', (data) => {
+            if (data.s) { ctx.beginPath(); ctx.moveTo(data.x, data.y); }
+            else { ctx.lineTo(data.x, data.y); ctx.stroke(); }
+        });
+        conn.on('close', () => { statusText.innerText = "BAĞLANTI KOPTU."; });
     });
-
-    function connect() {
-        conn = peer.connect(pcID, { reliable: true });
-        conn.on('open', () => {
-            statusDiv.innerText = "PC'ye Bağlandı!";
-            statusDiv.style.color = "#00ff88";
-        });
-        conn.on('close', () => setTimeout(connect, 2000));
-    }
-
-    function draw(x, y, isStart) {
-        if (isStart) { ctx.beginPath(); ctx.moveTo(x, y); }
-        else { ctx.lineTo(x, y); ctx.stroke(); }
-    }
-
-    if (isMobile) {
-        let paint = false;
-        const events = (e) => {
-            const t = e.touches ? e.touches[0] : e;
-            const x = t.clientX; const y = t.clientY;
-            if(e.type === 'touchstart' || e.type === 'mousedown') {
-                paint = true; draw(x, y, true); if(conn) conn.send({x, y, s:true});
-            } else if(paint && (e.type === 'touchmove' || e.type === 'mousemove')) {
-                draw(x, y, false); if(conn) conn.send({x, y, s:false});
-            } else { paint = false; }
-        };
-
-        ['mousedown','mousemove','mouseup','touchstart','touchmove','touchend'].forEach(evt => {
-            canvas.addEventListener(evt, (e) => {
-                if(evt.startsWith('touch')) e.preventDefault();
-                events(e);
-            }, {passive: false});
-        });
-    }
 </script>
 </body>
 </html>
